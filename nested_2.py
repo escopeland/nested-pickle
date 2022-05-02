@@ -1,16 +1,20 @@
+from collections import namedtuple
 import pickle
 
-class WidgetType(object):
-    
-    class FloatType(object):
-        pass
-    
-    class TextType(object):
-        pass
 
-class ObjectToPickle(object):
-     def __init__(self):
-         self.type = WidgetType.TextType
+class Foo:
 
-o = ObjectToPickle()
-p = pickle.dumps(o)
+    # Bar = namedtuple('Foo.Bar', ['x', 'y'])
+    Bar = type('Foo.Bar', (), dict.fromkeys(('x', 'y')))
+
+    def baz(self):
+        s = set()
+        b = self.Bar()
+        b.x = 2
+        b.y = 3
+        s.add(b)
+        print(pickle.dumps(s))
+
+if __name__ == '__main__':
+    f = Foo()
+    f.baz()
