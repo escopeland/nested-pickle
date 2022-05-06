@@ -162,7 +162,7 @@ class Holding(BaseHolding):
 
     def __init__(self):
         self.holdings = SubHolding()
-        self.data = randbytes(1000000)
+        self.data = randbytes(1)
 
 
 class SubHolding(BaseHolding):
