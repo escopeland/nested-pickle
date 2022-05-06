@@ -4,14 +4,12 @@ import pprint
 import json
 from random import randbytes
 from imports.time_utils import timer
+from itertools import chain
 
-
-pp = pprint.PrettyPrinter(indent=2)
+pp = pprint.PrettyPrinter()
 
 def get_attrs(obj):
-    return (a for a in dir(obj) if
-            not a.startswith('__') and not a.endswith('__') and
-            not isinstance(getattr(obj, a, None), types.MethodType))
+    return chain.from_iterable(getattr(cls, '__slots__', []) for cls in obj.__class__.__mro__)
 
 def get_target(state, attr):
     cls = state[attr]['__class__'].split('.')
@@ -35,7 +33,7 @@ class PositionMeta(type):
 
 
 class Position(metaclass=PositionMeta):
-    __slots__ = ('label') # Need to know owner since it's dynamically set!
+    __slots__ = ('label', ) # Need to know owner since it's dynamically set!
 
     def __init__(self, label=None, **kwargs):
         self.label = label
@@ -79,13 +77,13 @@ class History:
 
     def __init__(self, owner): # All slots require initialization
         self.position = None
-        self.__owner__ = owner
+        self.__owner__ = owner.__name__
         self.id = 0
 
     def make(self, **kwargs):
         self.id += 1
         label = 'label-' + str(self.id)
-        self.position = self.__owner__.__Position__(label=label, **kwargs)
+        self.position = globals()[self.__owner__].__Position__(label=label, **kwargs)
         return self.position
 
     def __getstate__(self):
@@ -124,7 +122,7 @@ class BaseHolding(metaclass=BaseMeta):
 
     def __new__(cls, *args, **kwargs):
         __pos_name__ = '.'.join(c.__name__ for c in reversed(cls.__mro__[:-2])) + '.__Position__'
-        cls.__Position__ = type(__pos_name__, (Position, ), dict(), attrs=cls.__attrs__)
+        cls.__Position__ = type(__pos_name__, (Position, ), dict(), attrs=cls.attrs)
         instance = super().__new__(cls)
         instance.history = History(cls)
         instance.holdings = None
@@ -157,8 +155,8 @@ class BaseHolding(metaclass=BaseMeta):
 
 
 class Holding(BaseHolding):
-    __attrs__ = ('x', 'y', 'z')
-    __slots__ = ('data')
+    attrs = ('x', 'y', 'z')
+    __slots__ = ('data', )
 
     def __init__(self):
         self.holdings = SubHolding()
@@ -166,14 +164,14 @@ class Holding(BaseHolding):
 
 
 class SubHolding(BaseHolding):
-    __attrs__ = ('a', 'b')
+    attrs = ('a', 'b')
 
     def __init__(self):
         self.holdings = SubSubHolding()
 
 
 class SubSubHolding(BaseHolding):
-    __attrs__ = ('alpha', 'beta', 'gamma', 'delta')
+    attrs = ('alpha', 'beta', 'gamma', 'delta')
 
 
 if __name__ == '__main__':
