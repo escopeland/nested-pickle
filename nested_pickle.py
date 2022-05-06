@@ -2,10 +2,15 @@ import pickle
 import types
 import pprint
 import json
-from random import randbytes
+import random
+import string
+import time
+
 from imports.time_utils import timer
 from itertools import chain
 
+letters = string.ascii_letters
+rstring = ''.join(random.choice(letters) for i in range(1000000))
 pp = pprint.PrettyPrinter()
 
 def get_attrs(obj):
@@ -160,7 +165,8 @@ class Holding(BaseHolding):
 
     def __init__(self):
         self.holdings = SubHolding()
-        self.data = randbytes(1)
+        # self.data = randbytes(1)
+        self.data = rstring
 
 
 class SubHolding(BaseHolding):
@@ -178,20 +184,24 @@ if __name__ == '__main__':
     h1 = Holding()
     h2 = Holding()
     h3 = Holding()
+    h4 = Holding()
 
     h1.history.make(x=1, y=2, z=3)
     h1.holdings.history.make(a=4, b=5)
     h1.holdings.holdings.history.make(alpha='alpha', beta='beta', gamma='gamma', delta='delta')
 
-    with timer('Directly serialization/deserialization'):
+    print(f'Serdes test including {len(rstring)} character string')
+    with timer('    Test: sleeping 1 second completed'):
+        time.sleep(1)
+    with timer('    Directly serdes completed'):
         h2.__setstate__(h1.__getstate__())
-    with timer('Pickle serialization/deserialization'):
+    with timer('    Pickle serdes completed'):
         h3 = pickle.loads(pickle.dumps(h2))
+    with timer('    JSON serdes nested between Direct serdes completed'):
+        h4.__setstate__(json.loads(json.dumps(h1.__getstate__())))
 
-    if h1.history.position == h3.history.position:
-        print('Successhul holdings rebuild!')
-    if h1.holdings.history.position == h3.holdings.history.position:
-        print('Successful sub-holdings rebuild!')
-    if h1.holdings.holdings.history.position == h3.holdings.holdings.history.position:
-        print('Successful sub-sub-holdings rebuild!')
+    assert h1.history.position == h3.history.position
+    assert h1.holdings.history.position == h3.holdings.history.position
+    assert h1.holdings.holdings.history.position == h3.holdings.holdings.history.position
+    assert h1.holdings.holdings.history.position == h4.holdings.holdings.history.position
     pass
