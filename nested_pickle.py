@@ -34,19 +34,7 @@ def get_state(obj):
             state[attr] = value
     return state
 
-def set_state(obj, state):
-    # __class__ = state.pop('__class__')  # used by get_target()
-    # for attr in get_attrs(obj):
-    #     value = getattr(obj, attr, None) # None traps for unset `__slots__`
-    #     if attr in ('holdings', 'history') and value is None and state[attr]:
-    #         # `value` was dynamically created: rebuild it
-    #         value = get_target(state, attr)
-    #         setattr(obj, attr, value) # attach the new object to this one
-    #     if isinstance(value, (BaseHolding, History)):
-    #         value.__setstate__(state.pop(attr))
-    #     else:
-    #         setattr(obj, attr, state.pop(attr))
-    
+def set_state(obj, state): 
     __class__ = state.pop('__class__') # used by get_target()
     for attr in get_attrs(obj):
         value = getattr(obj, attr, None) # None traps for unset `__slots__`
@@ -92,18 +80,9 @@ class Position(metaclass=PositionMeta):
 
     def __getstate__(self):
         return get_state(self)
-        # state = dict()
-        # state['__class__'] = self.__class__.__name__ # used by get_target()
-        # for attr in get_attrs(self):
-        #     value = getattr(self, attr, None) # `None` traps for unset `__slots__`
-        #     state[attr] = value
-        # return state
 
     def __setstate__(self, state):
         set_state(self, state)
-        # __class__ = state.pop('__class__') # used by get_target()
-        # for attr in get_attrs(self):
-        #     setattr(self, attr, state.pop(attr))
 
     def __eq__(self, other):
         return all(getattr(self, s) == getattr(other, s) for s in self.__slots__)
@@ -137,29 +116,9 @@ class History:
 
     def __getstate__(self):
         return get_state(self)
-        # state = dict()
-        # state['__class__'] = self.__class__.__name__ # used by get_target()
-        # for attr in get_attrs(self):
-        #     value = getattr(self, attr, None) # `None` traps for unset `__slots__`
-        #     if isinstance(value, Position):
-        #         state[attr] = value.__getstate__()
-        #     else:
-        #         state[attr] = value
-        # return state
 
     def __setstate__(self, state):
         set_state(self, state)
-        # __class__ = state.pop('__class__') # used by get_target()
-        # for attr in get_attrs(self):
-        #     value = getattr(self, attr, None) # None traps for unset `__slots__`
-        #     if attr == 'position' and value is None and state[attr]:
-        #         # `value` was dynamically created: rebuild it
-        #         value = get_target(state, attr)
-        #         setattr(self, attr, value) # attach the new object to this one
-        #     if isinstance(value, Position):
-        #         value.__setstate__(state.pop(attr))
-        #     else:
-        #         setattr(self, attr, state.pop(attr))
 
 
 class BaseMeta(type):
@@ -180,33 +139,11 @@ class BaseHolding(metaclass=BaseMeta):
         instance.holdings = None
         return instance
 
-
     def __getstate__(self):
         return get_state(self)
-        # state = dict()
-        # state['__class__'] = self.__class__.__name__ # used by get_target()
-        # for attr in get_attrs(self):
-        #     value = getattr(self, attr, None) # None traps for unset `__slots__`
-        #     if isinstance(value, (BaseHolding, History)):
-        #         state[attr] = value.__getstate__()
-        #     else:
-        #         state[attr] = value
-        # return state
 
     def __setstate__(self, state):
         set_state(self, state)
-        # __class__ = state.pop('__class__')  # used by get_target()
-        # for attr in get_attrs(self):
-        #     value = getattr(self, attr, None) # None traps for unset `__slots__`
-        #     if attr in ('holdings', 'history') and value is None and state[attr]:
-        #         # `value` was dynamically created: rebuild it
-        #         value = get_target(state, attr)
-        #         setattr(self, attr, value) # attach the new object to this one
-        #     if isinstance(value, (BaseHolding, History)):
-        #         value.__setstate__(state.pop(attr))
-        #     else:
-        #         setattr(self, attr, state.pop(attr))
-
 
 class Holding(BaseHolding):
     attrs = ('x', 'y', 'z')
