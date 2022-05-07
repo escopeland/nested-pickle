@@ -1,16 +1,16 @@
 import pickle
-import types
+# import types
 import pprint
 import json
-import random
-import string
+# import random
+# import string
 import time
 
 from imports.time_utils import timer
 from itertools import chain
 
-letters = string.ascii_letters
-rstring = ''.join(random.choice(letters) for i in range(10))
+# letters = string.ascii_letters
+# rstring = ''.join(random.choice(letters) for i in range(10))
 pp = pprint.PrettyPrinter()
 
 class NullClass:
@@ -76,14 +76,6 @@ class SerDesMeta(type):
             namespace['__eq__'] = __equal__
         return super().__new__(cls, name, bases, namespace)
 
-class BaseMeta(type):
-    @classmethod
-    def __prepare__(cls, name, bases, **kwargs):
-        return {'__slots__': ()}
-
-class BaseSerDesMeta(BaseMeta, SerDesMeta):
-    pass
-
 class PositionMeta(type):
     @classmethod
     def __prepare__(cls, name, bases, **kwargs):
@@ -137,6 +129,14 @@ class History(metaclass=SerDesMeta):
         label = 'label-' + str(self.id)
         self.position = globals()[self.__owner__].__Position__(label=label, **kwargs)
 
+class BaseMeta(type):
+    @classmethod
+    def __prepare__(cls, name, bases, **kwargs):
+        return {'__slots__': ()}
+
+class BaseSerDesMeta(BaseMeta, SerDesMeta):
+    pass
+
 class BaseHolding(metaclass=BaseSerDesMeta):
     __slots__ = ('holdings', 'history')
     __nested_classes__ = {'holdings': 'BaseHolding', 'history': 'History'}
@@ -146,26 +146,19 @@ class BaseHolding(metaclass=BaseSerDesMeta):
         cls.__Position__ = type(__pos_name__, (Position, ), dict(), attrs=cls.attrs)
         instance = super().__new__(cls)
         instance.history = History(cls)
-        instance.holdings = None
+        instance.holdings = getattr(cls, 'holding_type', lambda :None)()
         return instance
-
-class Holding(BaseHolding):
-    attrs = ('x', 'y', 'z')
-    __slots__ = ('data', )
-
-    def __init__(self):
-        self.holdings = SubHolding()
-        # self.data = randbytes(1)
-        self.data = rstring
-
-class SubHolding(BaseHolding):
-    attrs = ('a', 'b')
-
-    def __init__(self):
-        self.holdings = SubSubHolding()
 
 class SubSubHolding(BaseHolding):
     attrs = ('alpha', 'beta', 'gamma', 'delta')
+
+class SubHolding(BaseHolding):
+    attrs = ('a', 'b')
+    holding_type = SubSubHolding
+
+class Holding(BaseHolding):
+    attrs = ('x', 'y', 'z')
+    holding_type = SubHolding
 
 
 if __name__ == '__main__':
@@ -178,9 +171,9 @@ if __name__ == '__main__':
     h1.holdings.history.make(a=4, b=5)
     h1.holdings.holdings.history.make(alpha='alpha', beta='beta', gamma='gamma', delta='delta')
 
-    print(f'Serdes test including {len(rstring)} character string')
+    print(f'Serdes test ')
     with timer('    Test: sleeping 1 second completed'):
-        time.sleep(1)
+        time.sleep(0.5)
     with timer('    Directly serdes completed'):
         h2.__setstate__(h1.__getstate__())
     with timer('    Pickle serdes completed'):
