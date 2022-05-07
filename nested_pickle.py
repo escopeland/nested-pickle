@@ -10,8 +10,11 @@ from imports.time_utils import timer
 from itertools import chain
 
 letters = string.ascii_letters
-rstring = ''.join(random.choice(letters) for i in range(1000000))
+rstring = ''.join(random.choice(letters) for i in range(10))
 pp = pprint.PrettyPrinter()
+
+class NullClass:
+    pass
 
 def get_attrs(obj):
     return chain.from_iterable(getattr(cls, '__slots__', []) for cls in obj.__class__.__mro__)
@@ -28,7 +31,8 @@ def get_state(obj):
     state['__class__'] = obj.__class__.__name__ # used by get_target()
     for attr in get_attrs(obj):
         value = getattr(obj, attr, None) # `None` traps for unset `__slots__`
-        if isinstance(value, tuple(globals()[cls] for cls in obj.__class__.__nested_classes__.values())):
+        cls_keys, cls_vals = obj.__get_nested_classes__()
+        if isinstance(value, cls_vals):
             state[attr] = value.__getstate__()
         else:
             state[attr] = value
@@ -38,19 +42,47 @@ def set_state(obj, state):
     __class__ = state.pop('__class__') # used by get_target()
     for attr in get_attrs(obj):
         value = getattr(obj, attr, None) # None traps for unset `__slots__`
-        if attr in (cls_key for cls_key in obj.__class__.__nested_classes__.keys()) and value is None and state[attr]:
+        cls_keys, cls_vals = obj.__get_nested_classes__()
+        if attr in cls_keys and value is None and state[attr]:
             # `value` was dynamically created: rebuild it
             value = get_target(state, attr)
             setattr(obj, attr, value) # attach the new object to this one
-        if isinstance(value, tuple(globals()[cls] for cls in obj.__class__.__nested_classes__.values())):
+        if isinstance(value, cls_vals):
             value.__setstate__(state.pop(attr))
         else:
             setattr(obj, attr, state.pop(attr))
 
+def __get_nested_classes__(obj):
+    try:
+        return obj.__class__.__nested_class_keys__, obj.__class__.__nested_class_vals__
+    except:
+        nested_classes = obj.__class__.__nested_classes__
+        keys = nested_classes.keys()
+        vals = tuple(globals()[cls] for cls in nested_classes.values())   
+        obj.__class__.__nested_class_keys__, obj.__class__.__nested_class_vals__ = keys, vals
+        return keys, vals
 
-class NullClass:
+def __equal__(self, other):
+    return self.__getstate__() == other.__getstate__()
+
+class SerDesMeta(type):
+    def __new__(cls, name, bases, namespace):
+        if not bases:
+            namespace['__getstate__'] = get_state
+            namespace['__setstate__'] = set_state
+            namespace['__get_nested_classes__'] = __get_nested_classes__
+            namespace['__nested_class_keys'] = None
+            namespace['__nested_class_vals'] = None
+            namespace['__eq__'] = __equal__
+        return super().__new__(cls, name, bases, namespace)
+
+class BaseMeta(type):
+    @classmethod
+    def __prepare__(cls, name, bases, **kwargs):
+        return {'__slots__': ()}
+
+class BaseSerDesMeta(BaseMeta, SerDesMeta):
     pass
-
 
 class PositionMeta(type):
     @classmethod
@@ -64,8 +96,10 @@ class PositionMeta(type):
 
         return super().__new__(cls, name, bases, namespace)
 
+class PositionSerDesMeta(PositionMeta, SerDesMeta):
+    pass
 
-class Position(metaclass=PositionMeta):
+class Position(metaclass=PositionSerDesMeta):
     __slots__ = ('label', ) # Need to know owner since it's dynamically set!
     __nested_classes__ = {'null_class': 'NullClass'}
 
@@ -78,21 +112,11 @@ class Position(metaclass=PositionMeta):
         for k, v in kwargs.items():
             setattr(self, k, v) # AttributeError on write to non-existent slot
 
-    def __getstate__(self):
-        return get_state(self)
-
-    def __setstate__(self, state):
-        set_state(self, state)
-
-    def __eq__(self, other):
-        return all(getattr(self, s) == getattr(other, s) for s in self.__slots__)
-
     def __repr__(self):
         _repr = (f'{k}={getattr(self, k, None)}' for k in self.__slots__)
         return f"{self.__class__.__name__.split('.')[0]}({self.label}): {', '.join(_repr)}"
 
-
-class History:
+class History(metaclass=SerDesMeta):
     # `__owner__` is skipped by __getstate__ and __setstate__ since it's a
     # dunder attribute. That's OK because `owner` is passed in History's
     # `__init__()`, which gets called by the parent <class Holding> object's
@@ -112,22 +136,8 @@ class History:
         self.id += 1
         label = 'label-' + str(self.id)
         self.position = globals()[self.__owner__].__Position__(label=label, **kwargs)
-        return self.position
 
-    def __getstate__(self):
-        return get_state(self)
-
-    def __setstate__(self, state):
-        set_state(self, state)
-
-
-class BaseMeta(type):
-    @classmethod
-    def __prepare__(cls, name, bases, **kwargs):
-        return {'__slots__': ()}
-
-
-class BaseHolding(metaclass=BaseMeta):
+class BaseHolding(metaclass=BaseSerDesMeta):
     __slots__ = ('holdings', 'history')
     __nested_classes__ = {'holdings': 'BaseHolding', 'history': 'History'}
 
@@ -139,12 +149,6 @@ class BaseHolding(metaclass=BaseMeta):
         instance.holdings = None
         return instance
 
-    def __getstate__(self):
-        return get_state(self)
-
-    def __setstate__(self, state):
-        set_state(self, state)
-
 class Holding(BaseHolding):
     attrs = ('x', 'y', 'z')
     __slots__ = ('data', )
@@ -154,13 +158,11 @@ class Holding(BaseHolding):
         # self.data = randbytes(1)
         self.data = rstring
 
-
 class SubHolding(BaseHolding):
     attrs = ('a', 'b')
 
     def __init__(self):
         self.holdings = SubSubHolding()
-
 
 class SubSubHolding(BaseHolding):
     attrs = ('alpha', 'beta', 'gamma', 'delta')
@@ -183,11 +185,11 @@ if __name__ == '__main__':
         h2.__setstate__(h1.__getstate__())
     with timer('    Pickle serdes completed'):
         h3 = pickle.loads(pickle.dumps(h2))
-    with timer('    JSON serdes nested between Direct serdes completed'):
+    with timer('    Chained JSON and Direct serdes completed'):
         h4.__setstate__(json.loads(json.dumps(h1.__getstate__())))
 
-    assert h1.history.position == h3.history.position
-    assert h1.holdings.history.position == h3.holdings.history.position
-    assert h1.holdings.holdings.history.position == h3.holdings.holdings.history.position
-    assert h1.holdings.holdings.history.position == h4.holdings.holdings.history.position
+    assert h1 == h2
+    assert h1 == h3
+    assert h1 == h4
+
     pass
