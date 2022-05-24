@@ -43,7 +43,8 @@ class Position(metaclass=PositionMeta):
 
     def __getstate__(self):
         state = dict(owner=self.__class__.owner)
-        state |= {s:getattr(self, s) for s in get_slots(self)}
+        for s in self.__slots__:
+            state[s] = getattr(self, s)
         return state
 
     def __setstate__(self, state):
@@ -80,7 +81,8 @@ class History(dict, metaclass=HistoryMeta):
 
     def __getstate__(self):
         state = dict(owner=self.__class__.owner)
-        state |= {k:v.__getstate__() for k,v in self.items()}
+        for k, v in self.items():
+            state[k] = v.__getstate__()
         return state
 
     def __setstate__(self, state):
@@ -127,7 +129,8 @@ class Holdings(dict, metaclass=HoldingsMeta):
 
     def __getstate__(self):
         state = dict(owner=self.__class__.owner)
-        state |= {k:v.__getstate__() for k,v in self.items()}
+        for k, v in self.items():
+            state[k] = v.__getstate__()
         return state
 
     def __setstate__(self, state):
