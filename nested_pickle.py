@@ -8,11 +8,6 @@ from imports.time_utils import timer
 from utilities import get_slots
 
 pprint = PrettyPrinter(sort_dicts=False).pprint
-# class PositionSerDesMeta(PositionMeta, SerDesMeta):
-#     pass
-# class BaseSerDesMeta(BaseMeta, SerDesMeta):
-#     pass
-
 
 class PositionMeta(type):
     @classmethod
@@ -97,22 +92,12 @@ class History(dict, metaclass=HistoryMeta):
     def __eq__(self, other):
         return self.__getstate__() == other.__getstate__()
 
-
 class HoldingsMeta(type):
     @classmethod
     def __prepare__(cls, name, bases, **kwargs):
         return {'__slots__': ()}
 
     def __new__(cls, name, bases, namespace):
-        """ `holding_type` is a sub-class created by BaseMeta. To sub-class
-        it again here to be consistent with other metaclasses, i.e.::
-
-            type(owner.__name__ + holding_type.name, (holding_type, ),
-                    dict(), owner=owner)
-
-        would require `BaseMeta` to trap for sub-sub-classes. It's easier not
-        to bother with that since we don't need a unique sub-sub-class.
-        """
         if not dict in bases:
             holding_type = namespace.pop('holding_type')
             namespace['Holding'] = (
