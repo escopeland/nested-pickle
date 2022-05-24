@@ -112,13 +112,13 @@ class HoldingsMeta(type):
         to bother with that since we don't need a unique sub-sub-class.
         """
         if not dict in bases:
-            # This gets called from BaseMeta ONLY if `holding_type` is specified
             # ATTRS for parent have been popped in BaseMeta
 
             holding_type = namespace.pop('holding_type')
-            namespace['Holding'] = type(
-                name.split('.')[0] + '.' + holding_type.__name__,
-                (holding_type, ),  dict(owner=namespace['owner']))
+            namespace['Holding'] = (
+                type(name.split('.')[0] + '.' + holding_type.__name__,
+                    (holding_type, ),  dict(owner=namespace['owner']))
+                if holding_type else None)
 
             # namespace['Holding'] = type(
             #     name.split('.')[0] + '.HoldingType', (holding_type, ), 
@@ -165,10 +165,15 @@ class BaseMeta(type):
 
             if len(name.split('.')) < 2: # Skip if an already setup `holding_type`
                 namespace['History']  = type(name + '.History',  (History, ),
-                    dict(owner=name, attrs=namespace.pop('attrs')))
+                    dict(
+                        owner=name,
+                        attrs=namespace.pop('attrs')
+                ))
                 namespace['Holdings'] = type(name + '.Holdings', (Holdings, ),
-                    dict(owner=name, holding_type=holding_type)
-                    ) if (holding_type:=namespace.pop('holding_type', None)) else None
+                    dict(
+                        owner=name,
+                        holding_type=namespace.pop('holding_type', None)
+                ))
                 namespace['__slots__'] = ('history', 'holdings')
 
         return super().__new__(cls, name, bases, namespace)
@@ -179,24 +184,28 @@ class BaseHolding(metaclass=BaseMeta):
     def __new__(cls):
         self = super().__new__(cls)
         self.history  = cls.History()
-        if holding_type:=cls.Holdings: # Don't create holdings if at the bottom of the holdings stack
-            self.holdings = holding_type()
-        else:
-            self.holdings = None
+        self.holdings = cls.Holdings()
         return self
+        # if holding_type:=cls.Holdings: # Don't create holdings if at the bottom of the holdings stack
+        #     self.holdings = holding_type()
+        # else:
+        #     self.holdings = None
+        # return self
 
     def __getstate__(self):
         state = dict(owner=self.__class__.owner)
         state['history']  = self.history.__getstate__()
-        if self.holdings:
-            state['holdings'] = self.holdings.__getstate__()
+        state['holdings'] = self.holdings.__getstate__()
+        # if self.holdings:
+        #     state['holdings'] = self.holdings.__getstate__()
         return state
 
     def __setstate__(self, state):
         self.__class__.owner = state.pop('owner')
         self.history.__setstate__(state.pop('history'))
-        if holdings:=state.pop('holdings', None):
-            self.holdings.__setstate__(holdings)
+        self.holdings.__setstate__(state.pop('holdings'))
+        # if holdings:=state.pop('holdings', None):
+        #     self.holdings.__setstate__(holdings)
 
     def __eq__(self, other):
         return self.__getstate__() == other.__getstate__()
