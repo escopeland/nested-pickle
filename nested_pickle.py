@@ -1,95 +1,32 @@
-import pickle
-# import types
-from pprint import pprint
 import json
-# import random
-# import string
+import pickle
 import time
+from itertools import chain
+from pprint import PrettyPrinter
 
 from imports.time_utils import timer
-from itertools import chain
+from utilities import get_slots
 
-# letters = string.ascii_letters
-# rstring = ''.join(random.choice(letters) for i in range(10))
-# pprint = pprint.PrettyPrinter()
+pprint = PrettyPrinter(sort_dicts=False).pprint
+# class PositionSerDesMeta(PositionMeta, SerDesMeta):
+#     pass
+# class BaseSerDesMeta(BaseMeta, SerDesMeta):
+#     pass
 
-class NullClass:
-    pass
-
-def get_attrs(obj):
-    return chain.from_iterable(getattr(cls, '__slots__', []) for cls in obj.__class__.__mro__)
-
-def get_target(state, attr):
-    cls = state[attr]['__class__'].split('.')
-    target = globals()[cls.pop(0)]
-    for attr in cls:
-        target = getattr(target, attr)
-    return target()
-
-def get_state(obj):
-    state = dict()
-    state['__class__'] = obj.__class__.__name__ # used by get_target()
-    for attr in get_attrs(obj):
-        value = getattr(obj, attr, None) # `None` traps for unset `__slots__`
-        cls_keys, cls_vals = obj.get_nested_classes()
-        if isinstance(value, cls_vals):
-            state[attr] = value.__getstate__()
-        else:
-            state[attr] = value
-    return state
-
-def set_state(obj, state): 
-    __class__ = state.pop('__class__') # used by get_target()
-    for attr in get_attrs(obj):
-        value = getattr(obj, attr, None) # None traps for unset `__slots__`
-        cls_keys, cls_vals = obj.get_nested_classes()
-        if attr in cls_keys and value is None and state[attr]:
-            # `value` was dynamically created: rebuild it
-            value = get_target(state, attr)
-            setattr(obj, attr, value) # attach the new object to this one
-        if isinstance(value, cls_vals):
-            value.__setstate__(state.pop(attr))
-        else:
-            setattr(obj, attr, state.pop(attr))
-
-def get_nested_classes(obj):
-    try:
-        return obj.__class__.nested_class_keys, obj.__class__.nested_class_vals
-    except:
-        nested_classes = getattr(obj.__class__, 'nested_classes', {'null_class': 'NullClass'})
-        keys = nested_classes.keys()
-        vals = tuple(globals()[cls] for cls in nested_classes.values())   
-        obj.__class__.nested_class_keys, obj.__class__.nested_class_vals = keys, vals
-        return keys, vals
-
-def __equal__(self, other):
-    return self.__getstate__() == other.__getstate__()
-
-class SerDesMeta(type):
-    def __new__(cls, name, bases, namespace):
-        if not bases:
-            namespace['__getstate__'] = get_state
-            namespace['__setstate__'] = set_state
-            namespace['get_nested_classes'] = get_nested_classes
-            namespace['__eq__'] = __equal__
-        return super().__new__(cls, name, bases, namespace)
 
 class PositionMeta(type):
     @classmethod
     def __prepare__(cls, name, bases, **kwargs):
         return {'__slots__': ()}
 
-    def __new__(cls, name, bases, namespace, owner=None):
+    def __new__(cls, name, bases, namespace, owner=None, attrs=None):
         if bases:
-            namespace['__slots__'] = owner.attrs
-            namespace['owner'] = owner.__name__
+            namespace['owner'] = owner
+            namespace['__slots__'] = attrs
 
         return super().__new__(cls, name, bases, namespace)
-
-class PositionSerDesMeta(PositionMeta, SerDesMeta):
-    pass
-
-class Position(metaclass=PositionSerDesMeta):
+        
+class Position(metaclass=PositionMeta):
     __slots__ = ('label', )
 
     def __init__(self, label=None, **kwargs):
@@ -105,38 +42,143 @@ class Position(metaclass=PositionSerDesMeta):
         attr_repr = (f'{k}={getattr(self, k, None)}' for k in self.__slots__)
         return f"{self.owner}({self.label}): {', '.join(attr_repr)}"
 
-class History(metaclass=SerDesMeta):
-    __slots__ =      ('position', 'owner', 'id')
-    nested_classes = {'position': 'Position'}
+    def __getstate__(self):
+        state = dict(owner=self.__class__.owner)
+        state |= {s:getattr(self, s) for s in get_slots(self)}
+        return state
 
-    def __init__(self, owner): # All slots require initialization
-        self.position = None
-        self.owner = owner.__name__
-        self.id = 0
+    def __setstate__(self, state):
+        self.__class__.owner = state.pop('owner')
+        for s in get_slots(self):
+            setattr(self, s, state.pop(s))
 
-    def make(self, **kwargs):
-        self.id += 1
-        label = 'label-' + str(self.id)
-        self.position = globals()[self.owner].Position(label, **kwargs)
+    def __eq__(self, other):
+        return self.__getstate__() == other.__getstate__()
+
+class HistoryMeta(type):
+    @classmethod
+    def __prepare__(cls, name, bases, **kwargs):
+        return {'__slots__': ()}
+
+    def __new__(cls, name, bases, namespace, owner=None, attrs=None):
+        if not dict in bases:
+            namespace['owner'] = owner
+            namespace['Position'] = type(owner + '.Position', (Position, ),
+                                         dict(), owner=owner, attrs=attrs)
+        return super().__new__(cls, name, bases, namespace)
+
+class History(dict, metaclass=HistoryMeta):
+
+    def create(self, label, **kwargs):
+        self[label] = self.__class__.Position(label, **kwargs)
+
+    def __repr__(self):
+        return f'History object: {len(self)} instances of type {self.__class__.Position}'
+
+    def __getstate__(self):
+        state = dict(owner=self.__class__.owner)
+        state |= {k:v.__getstate__() for k,v in self.items()}
+        return state
+
+    def __setstate__(self, state):
+        self.clear()
+        self.__class__.owner = state.pop('owner')
+        target = self.__class__.Position
+        for k, s in state.items():
+            v = target()
+            v.__setstate__(s)
+            self[k] = v
+
+    def __eq__(self, other):
+        return self.__getstate__() == other.__getstate__()
+
+
+class HoldingsMeta(type):
+    @classmethod
+    def __prepare__(cls, name, bases, **kwargs):
+        return {'__slots__': ()}
+
+    def __new__(cls, name, bases, namespace, owner=None, holding_type=None):
+        """ `holding_type` is a sub-class created by BaseMeta. To sub-class
+        it again here to be consistent with other metaclasses, i.e.::
+
+            type(owner.__name__ + holding_type.name, (holding_type, ),
+                    dict(), owner=owner)
+
+        would require `BaseMeta` to trap for sub-sub-classes. It's easier not
+        to bother with that since we don't need a unique sub-sub-class.
+        """
+        if not dict in bases:
+            namespace['owner'] = owner
+            namespace['Holding'] = holding_type
+            # namespace['Holding'] = type(name + '.holding_type',  (holding_type, ),  dict(),
+            #     owner=name)
+
+        return super().__new__(cls, name, bases, namespace)
+
+class Holdings(dict, metaclass=HoldingsMeta):
+
+    def create(self, label):
+        # self[label] = self.__class__.Holding(owner=self.__class__.owner)
+        self[label] = self.__class__.Holding(owner=self.__class__.owner)
+
+    def __getstate__(self):
+        state = dict(owner=self.__class__.owner)
+        state |= {k:v.__getstate__() for k,v in self.items()}
+        return state
+
+    def __setstate__(self, state):
+        self.clear()
+        self.__class__.owner = state.pop('owner')
+        target = self.__class__.Holding
+        for k, s in state.items():
+            v = target()
+            v.__setstate__(s)
+            self[k] = v
+
+    def __eq__(self, other):
+        return self.__getstate__() == other.__getstate__()
 
 class BaseMeta(type):
     @classmethod
     def __prepare__(cls, name, bases, **kwargs):
         return {'__slots__': ()}
 
-class BaseSerDesMeta(BaseMeta, SerDesMeta):
-    pass
+    def __new__(cls, name, bases, namespace, owner=None):
+        if bases:
+            namespace['owner'] = owner
+            namespace['History']  = type(name + '.History',  (History, ),  dict(),
+                owner=name, attrs=namespace['attrs'])
+            namespace['Holdings'] = type(name + '.Holdings', (Holdings, ), dict(),
+                owner=name, holding_type=namespace.get('holding_type'))
+            namespace['__slots__'] = ('history', 'holdings')
 
-class BaseHolding(metaclass=BaseSerDesMeta):
-    __slots__ =      ('holdings', 'history')
-    nested_classes = {'holdings': 'BaseHolding', 'history': 'History'}
+        return super().__new__(cls, name, bases, namespace)
 
-    def __new__(cls, *args, **kwargs):
-        cls.Position = type(cls.__name__ + '.Position', (Position, ), dict(), owner=cls)
+class BaseHolding(metaclass=BaseMeta):
+    # __slots__ = ('history', 'holdings')
+
+    def __new__(cls, owner=None):
         self = super().__new__(cls)
-        self.history = History(cls)
-        self.holdings = getattr(cls, 'holding_type', lambda :None)()
+        if owner is not None: self.__class__.owner = owner
+        self.history  = cls.History()
+        self.holdings = cls.Holdings()
         return self
+
+    def __getstate__(self):
+        state = dict(owner=self.__class__.owner)
+        state['history']  = self.history.__getstate__()
+        state['holdings'] = self.holdings.__getstate__()
+        return state
+
+    def __setstate__(self, state):
+        self.__class__.owner = state.pop('owner')
+        self.history.__setstate__(state.pop('history'))
+        self.holdings.__setstate__(state.pop('holdings'))
+
+    def __eq__(self, other):
+        return self.__getstate__() == other.__getstate__()
+
 
 class SubSubHolding(BaseHolding):
     attrs = ('alpha', 'beta', 'gamma', 'delta')
@@ -156,12 +198,15 @@ if __name__ == '__main__':
     h3 = Holding()
     h4 = Holding()
 
-    h1.history.make(x=1, y=2, z=3)
-    h1.holdings.history.make(a=4, b=5)
-    h1.holdings.holdings.history.make(alpha='alpha', beta='beta', gamma='gamma', delta='delta')
+    h1.holdings.create('holding-1')
+    h1.holdings['holding-1'].holdings.create('holding-1')
+    h1.history.create(label='position-1', x=1, y=2, z=3)
+    h1.history.create(label='position-2', x=5, y=6, z=7)
+    h1.holdings['holding-1'].history.create(label='position-1', a=4, b=5)
+    h1.holdings['holding-1'].holdings['holding-1'].history.create(label='position-1', alpha='alpha', beta='beta', gamma='gamma', delta='delta')
 
     print(f'Serdes test ')
-    with timer('    Test: sleeping 1 second completed'):
+    with timer('    Test: sleeping 1/2 second completed'):
         time.sleep(0.5)
     with timer('    Directly serdes completed'):
         h2.__setstate__(h1.__getstate__())
@@ -171,7 +216,7 @@ if __name__ == '__main__':
         h4.__setstate__(json.loads(json.dumps(h1.__getstate__())))
 
     assert h1 == h2
-    assert h1 == h3
-    assert h1 == h4
+    assert h2 == h3
+    assert h3 == h4
 
-    pass
+    # pass
