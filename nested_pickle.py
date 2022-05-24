@@ -19,15 +19,14 @@ class PositionMeta(type):
     def __prepare__(cls, name, bases, **kwargs):
         return {'__slots__': ()}
 
-    def __new__(cls, name, bases, namespace, owner=None, attrs=None):
+    def __new__(cls, name, bases, namespace):
         if bases:
-            namespace['owner'] = owner
-            namespace['__slots__'] = attrs
+            # namespace['owner'] = owner
+            namespace['__slots__'] = ('label',) + namespace.pop('attrs')
 
         return super().__new__(cls, name, bases, namespace)
         
 class Position(metaclass=PositionMeta):
-    __slots__ = ('label', )
 
     def __init__(self, label=None, **kwargs):
         self.label = label
@@ -60,11 +59,15 @@ class HistoryMeta(type):
     def __prepare__(cls, name, bases, **kwargs):
         return {'__slots__': ()}
 
-    def __new__(cls, name, bases, namespace, owner=None, attrs=None):
+    def __new__(cls, name, bases, namespace):
         if not dict in bases:
-            namespace['owner'] = owner
-            namespace['Position'] = type(owner + '.Position', (Position, ),
-                                         dict(), owner=owner, attrs=attrs)
+            # namespace['owner'] = owner
+            namespace['Position'] = type(
+                name.split('.')[0] + '.Position', (Position, ),
+                dict(
+                    owner=namespace['owner'],
+                    attrs=namespace.pop('attrs')
+                ))
         return super().__new__(cls, name, bases, namespace)
 
 class History(dict, metaclass=HistoryMeta):
@@ -98,7 +101,7 @@ class HoldingsMeta(type):
     def __prepare__(cls, name, bases, **kwargs):
         return {'__slots__': ()}
 
-    def __new__(cls, name, bases, namespace, owner=None, holding_type=None):
+    def __new__(cls, name, bases, namespace):
         """ `holding_type` is a sub-class created by BaseMeta. To sub-class
         it again here to be consistent with other metaclasses, i.e.::
 
@@ -109,18 +112,29 @@ class HoldingsMeta(type):
         to bother with that since we don't need a unique sub-sub-class.
         """
         if not dict in bases:
-            namespace['owner'] = owner
-            namespace['Holding'] = holding_type
-            # namespace['Holding'] = type(name + '.holding_type',  (holding_type, ),  dict(),
-            #     owner=name)
+            # This gets called from BaseMeta ONLY if `holding_type` is specified
+            # ATTRS for parent have been popped in BaseMeta
 
+            holding_type = namespace.pop('holding_type')
+            namespace['Holding'] = type(
+                name.split('.')[0] + '.' + holding_type.__name__,
+                (holding_type, ),  dict(owner=namespace['owner']))
+
+            # namespace['Holding'] = type(
+            #     name.split('.')[0] + '.HoldingType', (holding_type, ), 
+            #     dict(
+            #         owner=namespace['owner'],
+            #         holding_type=holding_type),
+            #     ) if (holding_type:=namespace.get('holding_type')) else None
+
+        # CHECK NAMESPACE HERE: ATTRS SHOULD NOT BE IN IT!!!!!!@
         return super().__new__(cls, name, bases, namespace)
 
 class Holdings(dict, metaclass=HoldingsMeta):
 
     def create(self, label):
         # self[label] = self.__class__.Holding(owner=self.__class__.owner)
-        self[label] = self.__class__.Holding(owner=self.__class__.owner)
+        self[label] = self.__class__.Holding()
 
     def __getstate__(self):
         state = dict(owner=self.__class__.owner)
@@ -144,37 +158,45 @@ class BaseMeta(type):
     def __prepare__(cls, name, bases, **kwargs):
         return {'__slots__': ()}
 
-    def __new__(cls, name, bases, namespace, owner=None):
+    def __new__(cls, name, bases, namespace):
         if bases:
-            namespace['owner'] = owner
-            namespace['History']  = type(name + '.History',  (History, ),  dict(),
-                owner=name, attrs=namespace['attrs'])
-            namespace['Holdings'] = type(name + '.Holdings', (Holdings, ), dict(),
-                owner=name, holding_type=namespace.get('holding_type'))
-            namespace['__slots__'] = ('history', 'holdings')
+            # Assign an owner if we're at the root of an asset stack
+            namespace['owner'] = namespace.pop('owner', None) or name
+
+            if len(name.split('.')) < 2: # Skip if an already setup `holding_type`
+                namespace['History']  = type(name + '.History',  (History, ),
+                    dict(owner=name, attrs=namespace.pop('attrs')))
+                namespace['Holdings'] = type(name + '.Holdings', (Holdings, ),
+                    dict(owner=name, holding_type=holding_type)
+                    ) if (holding_type:=namespace.pop('holding_type', None)) else None
+                namespace['__slots__'] = ('history', 'holdings')
 
         return super().__new__(cls, name, bases, namespace)
 
 class BaseHolding(metaclass=BaseMeta):
-    # __slots__ = ('history', 'holdings')
 
-    def __new__(cls, owner=None):
+    # def __new__(cls, owner=None):
+    def __new__(cls):
         self = super().__new__(cls)
-        if owner is not None: self.__class__.owner = owner
         self.history  = cls.History()
-        self.holdings = cls.Holdings()
+        if holding_type:=cls.Holdings: # Don't create holdings if at the bottom of the holdings stack
+            self.holdings = holding_type()
+        else:
+            self.holdings = None
         return self
 
     def __getstate__(self):
         state = dict(owner=self.__class__.owner)
         state['history']  = self.history.__getstate__()
-        state['holdings'] = self.holdings.__getstate__()
+        if self.holdings:
+            state['holdings'] = self.holdings.__getstate__()
         return state
 
     def __setstate__(self, state):
         self.__class__.owner = state.pop('owner')
         self.history.__setstate__(state.pop('history'))
-        self.holdings.__setstate__(state.pop('holdings'))
+        if holdings:=state.pop('holdings', None):
+            self.holdings.__setstate__(holdings)
 
     def __eq__(self, other):
         return self.__getstate__() == other.__getstate__()
@@ -200,6 +222,7 @@ if __name__ == '__main__':
 
     h1.holdings.create('holding-1')
     h1.holdings['holding-1'].holdings.create('holding-1')
+    s = h1.__getstate__()
     h1.history.create(label='position-1', x=1, y=2, z=3)
     h1.history.create(label='position-2', x=5, y=6, z=7)
     h1.holdings['holding-1'].history.create(label='position-1', a=4, b=5)
