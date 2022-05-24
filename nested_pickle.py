@@ -112,28 +112,17 @@ class HoldingsMeta(type):
         to bother with that since we don't need a unique sub-sub-class.
         """
         if not dict in bases:
-            # ATTRS for parent have been popped in BaseMeta
-
             holding_type = namespace.pop('holding_type')
             namespace['Holding'] = (
                 type(name.split('.')[0] + '.' + holding_type.__name__,
                     (holding_type, ),  dict(owner=namespace['owner']))
                 if holding_type else None)
 
-            # namespace['Holding'] = type(
-            #     name.split('.')[0] + '.HoldingType', (holding_type, ), 
-            #     dict(
-            #         owner=namespace['owner'],
-            #         holding_type=holding_type),
-            #     ) if (holding_type:=namespace.get('holding_type')) else None
-
-        # CHECK NAMESPACE HERE: ATTRS SHOULD NOT BE IN IT!!!!!!@
         return super().__new__(cls, name, bases, namespace)
 
 class Holdings(dict, metaclass=HoldingsMeta):
 
     def create(self, label):
-        # self[label] = self.__class__.Holding(owner=self.__class__.owner)
         self[label] = self.__class__.Holding()
 
     def __getstate__(self):
@@ -180,32 +169,22 @@ class BaseMeta(type):
 
 class BaseHolding(metaclass=BaseMeta):
 
-    # def __new__(cls, owner=None):
     def __new__(cls):
         self = super().__new__(cls)
         self.history  = cls.History()
         self.holdings = cls.Holdings()
         return self
-        # if holding_type:=cls.Holdings: # Don't create holdings if at the bottom of the holdings stack
-        #     self.holdings = holding_type()
-        # else:
-        #     self.holdings = None
-        # return self
 
     def __getstate__(self):
         state = dict(owner=self.__class__.owner)
         state['history']  = self.history.__getstate__()
         state['holdings'] = self.holdings.__getstate__()
-        # if self.holdings:
-        #     state['holdings'] = self.holdings.__getstate__()
         return state
 
     def __setstate__(self, state):
         self.__class__.owner = state.pop('owner')
         self.history.__setstate__(state.pop('history'))
         self.holdings.__setstate__(state.pop('holdings'))
-        # if holdings:=state.pop('holdings', None):
-        #     self.holdings.__setstate__(holdings)
 
     def __eq__(self, other):
         return self.__getstate__() == other.__getstate__()
