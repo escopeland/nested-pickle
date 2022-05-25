@@ -1,7 +1,6 @@
 import json
 import pickle
 import time
-from itertools import chain
 from pprint import PrettyPrinter
 
 from imports.time_utils import timer
@@ -92,44 +91,6 @@ class History(dict, metaclass=HistoryMeta):
     def __eq__(self, other):
         return self.__getstate__() == other.__getstate__()
 
-class HoldingsMeta(type):
-    @classmethod
-    def __prepare__(cls, name, bases, **kwargs):
-        return {'__slots__': ()}
-
-    def __new__(cls, name, bases, namespace):
-        if not dict in bases:
-            holding_type = namespace.pop('holding_type')
-            namespace['Holding'] = (
-                type(name.split('.')[0] + '.' + holding_type.__name__,
-                    (holding_type, ),  dict(owner=namespace['owner']))
-                if holding_type else None)
-
-        return super().__new__(cls, name, bases, namespace)
-
-class Holdings(dict, metaclass=HoldingsMeta):
-
-    def create(self, label):
-        self[label] = self.__class__.Holding()
-
-    def __getstate__(self):
-        state = dict(owner=self.__class__.owner)
-        for k, v in self.items():
-            state[k] = v.__getstate__()
-        return state
-
-    def __setstate__(self, state):
-        self.clear()
-        self.__class__.owner = state.pop('owner')
-        target = self.__class__.Holding
-        for k, s in state.items():
-            v = target()
-            v.__setstate__(s)
-            self[k] = v
-
-    def __eq__(self, other):
-        return self.__getstate__() == other.__getstate__()
-
 class BaseMeta(type):
     @classmethod
     def __prepare__(cls, name, bases, **kwargs):
@@ -142,27 +103,15 @@ class BaseMeta(type):
 
             if len(name.split('.')) < 2: # Skip if an already setup `holding_type`
                 namespace['History']  = type(name + '.History',  (History, ),
-                    dict(
-                        owner=name,
-                        attrs=namespace.pop('attrs')
-                ))
-
-
+                    dict(owner=name,
+                         attrs=namespace.pop('attrs')))
                 holding_type = namespace.pop('holding_type', None)
+
                 namespace['Holding'] = (
-                    # type(name.split('.')[0] + '.' + holding_type.__name__,
-                    type(name.split('.')[0] + '.' + holding_type.__name__,
-                        (holding_type, ),  dict(owner=namespace['owner']))
+                    type(name.split('.')[0] + '.Holding', (holding_type, ), 
+                         dict(owner=namespace['owner']))
                     if holding_type else None)
-                # namespace['Holdings'] = type(name + '.Holdings', (Holdings, ),
-                #     dict(
-                #         owner=name,
-                #         holding_type=namespace.pop('holding_type', None)
-                # ))
-
-
                 namespace['__slots__'] = ('history', )
-                # namespace['__slots__'] = ('history', 'holdings')
 
         return super().__new__(cls, name, bases, namespace)
 
@@ -171,7 +120,6 @@ class BaseHolding(dict, metaclass=BaseMeta):
     def __new__(cls):
         self = super().__new__(cls)
         self.history  = cls.History()
-        # self.holdings = cls.Holdings()
         return self
 
     def create(self, label):
@@ -180,28 +128,22 @@ class BaseHolding(dict, metaclass=BaseMeta):
     def __getstate__(self):
         state = dict(owner=self.__class__.owner)
         state['history']  = self.history.__getstate__()
-
         for k, v in self.items():
             state[k] = v.__getstate__()
-        # state['holdings'] = self.holdings.__getstate__()
-
         return state
 
     def __setstate__(self, state):
         self.__class__.owner = state.pop('owner')
         self.history.__setstate__(state.pop('history'))
-
         self.clear()
         target = self.__class__.Holding
         for k, s in state.items():
             v = target()
             v.__setstate__(s)
             self[k] = v
-        # self.holdings.__setstate__(state.pop('holdings'))
 
     def __eq__(self, other):
         return self.__getstate__() == other.__getstate__()
-
 
 class SubSubHolding(BaseHolding):
     attrs = ('alpha', 'beta', 'gamma', 'delta')
@@ -220,14 +162,6 @@ if __name__ == '__main__':
     h2 = Holding()
     h3 = Holding()
     h4 = Holding()
-
-    # h1.holdings.create('holding-1')
-    # h1.holdings['holding-1'].holdings.create('holding-1')
-    # s = h1.__getstate__()
-    # h1.history.create(label='position-1', x=1, y=2, z=3)
-    # h1.history.create(label='position-2', x=5, y=6, z=7)
-    # h1.holdings['holding-1'].history.create(label='position-1', a=4, b=5)
-    # h1.holdings['holding-1'].holdings['holding-1'].history.create(label='position-1', alpha='alpha', beta='beta', gamma='gamma', delta='delta')
 
     h1.create('holding-1')
     h1['holding-1'].create('holding-1')
@@ -249,5 +183,3 @@ if __name__ == '__main__':
     assert h1 == h2
     assert h2 == h3
     assert h3 == h4
-
-    # pass
