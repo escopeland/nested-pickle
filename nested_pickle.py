@@ -1,3 +1,19 @@
+# There is some tricky shit in here so you have to follow the recipe carefully.
+#
+# Note <class BaseHolindg> in particular:
+#   1. If initialization uses __new__ instead of __init__, then type.__call__
+#      will call dict.__init__(label) after __new__, which will create a key,
+#      value pair {'label':label} with label defaulting to None obviously given
+#      the signature of __new__.
+#   2. A workaround to this problem is to add an __init__ method, which just
+#      ignores the label argument and then either (i) doesn't bother to call
+#      super().__init__, or (ii) calls super().__init__ w/ NO arguments.
+#   3. The problem with using __init__ instead of __new__ is that pickle calls
+#      __new__ BUT NOT __init__. That means that __setstate__ needs to create
+#      self.holding = self.Holding(label=self.label) as shown below; otherwise,
+#      you get a "history does not exist" error. 
+
+
 import json
 import pickle
 import time
@@ -14,14 +30,14 @@ class PositionMeta(type):
 
     def __new__(cls, name, bases, namespace):
         if bases:
-            namespace['__slots__'] = ('label',) + namespace.pop('attrs')
+            namespace['__slots__'] = namespace.pop('attrs')
 
         return super().__new__(cls, name, bases, namespace)
         
 class Position(metaclass=PositionMeta):
 
-    def __init__(self, label=None, **kwargs):
-        self.label = label
+    def __init__(self, label, **kwargs):
+        self.__class__.label = label
 
         for a in self.__slots__:
             setattr(self, a, 0)
@@ -34,13 +50,14 @@ class Position(metaclass=PositionMeta):
         return f"{self.owner}({self.label}): {', '.join(attr_repr)}"
 
     def __getstate__(self):
-        state = dict(owner=self.owner)
+        state = dict(owner=self.owner, label=self.label)
         for s in self.__slots__:
             state[s] = getattr(self, s)
         return state
 
     def __setstate__(self, state):
         self.__class__.owner = state.pop('owner')
+        self.__class__.label = state.pop('label')
         for s in self.__slots__:
             setattr(self, s, state.pop(s))
 
@@ -57,19 +74,23 @@ class HistoryMeta(type):
             namespace['Position'] = type(
                 name.split('.')[0] + '.Position', (Position, ), dict(
                     owner=namespace['owner'],
+                    label=None,
                     attrs=namespace.pop('attrs')))
         return super().__new__(cls, name, bases, namespace)
 
 class History(dict, metaclass=HistoryMeta):
 
+    def __init__(self, label):
+        self.__class__.label = label
+
     def create(self, label, **kwargs):
-        self[label] = self.Position(label, **kwargs)
+        self[label] = self.Position(self.label, **kwargs)
 
     def __repr__(self):
         return f'History object: {len(self)} instances of type {self.Position}'
 
     def __getstate__(self):
-        state = dict(owner=self.owner)
+        state = dict(owner=self.owner, label=self.label)
         for k, v in self.items():
             state[k] = v.__getstate__()
         return state
@@ -77,9 +98,9 @@ class History(dict, metaclass=HistoryMeta):
     def __setstate__(self, state):
         self.clear()
         self.__class__.owner = state.pop('owner')
-        target = self.Position
+        self.__class__.label = state.pop('label')
         for k, s in state.items():
-            v = target()
+            v = self.Position(label=self.label)
             v.__setstate__(s)
             self[k] = v
 
@@ -95,10 +116,12 @@ class BaseMeta(type):
         if not dict in bases:
             # Assign an owner if we're at the root of an asset stack
             namespace['owner'] = namespace.pop('owner', None) or name
+            namespace['label'] = None
 
             if len(name.split('.')) < 2: # Skip if an already setup `holding_type`
                 namespace['History'] = type(name + '.History',  (History, ),
                     dict(owner=name,
+                         label=None,
                          attrs=namespace.pop('attrs')))
                 holding_type = namespace.pop('holding_type', None)
 
@@ -106,22 +129,23 @@ class BaseMeta(type):
                     type(name.split('.')[0] + '.Holding', (holding_type, ), 
                          dict(owner=namespace['owner']))
                     if holding_type else None)
+
                 namespace['__slots__'] = ('history', )
 
         return super().__new__(cls, name, bases, namespace)
 
 class BaseHolding(dict, metaclass=BaseMeta):
 
-    def __new__(cls):
-        self = super().__new__(cls)
-        self.history  = cls.History()
-        return self
+    def __init__(self, label=None):
+        self.__class__.label = label
+        self.history = self.History(label=label)
+        # no call to super().__init__() needed.
 
     def create(self, label):
-        self[label] = self.Holding()
+        self[label] = self.Holding(label=label)
 
     def __getstate__(self):
-        state = dict(owner=self.owner)
+        state = dict(owner=self.owner, label=self.label)
         state['history']  = self.history.__getstate__()
         for k, v in self.items():
             state[k] = v.__getstate__()
@@ -129,11 +153,14 @@ class BaseHolding(dict, metaclass=BaseMeta):
 
     def __setstate__(self, state):
         self.__class__.owner = state.pop('owner')
+        self.__class__.label = state.pop('label')
+        # The follwoing line is not req'd if self.history created in __new__
+        self.history = self.History(label=self.label)
         self.history.__setstate__(state.pop('history'))
         self.clear()
         target = self.Holding
         for k, s in state.items():
-            v = target()
+            v = target(self.label)
             v.__setstate__(s)
             self[k] = v
 
@@ -153,17 +180,18 @@ if __name__ == '__main__':
         attrs = ('x', 'y', 'z')
         holding_type = SubHolding
 
-    h1 = Holding()
-    h2 = Holding()
-    h3 = Holding()
-    h4 = Holding()
+    h1 = Holding(label='Portfolio')
+    h2 = Holding(label='Portfolio')
+    h3 = Holding(label='Portfolio')
+    h4 = Holding(label='Portfolio')
 
-    h1.create('holding-1')
-    h1['holding-1'].create('holding-1')
+    h1.create('Vanguard')
+    h1.__getstate__()
+    h1['Vanguard'].create('VTSNX')
     h1.history.create(label='position-1', x=1, y=2, z=3)
     h1.history.create(label='position-2', x=5, y=6, z=7)
-    h1['holding-1'].history.create(label='position-1', a=4, b=5)
-    h1['holding-1']['holding-1'].history.create(label='position-1', alpha='alpha', beta='beta', gamma='gamma', delta='delta')
+    h1['Vanguard'].history.create(label='position-1', a=4, b=5)
+    h1['Vanguard']['VTSNX'].history.create(label='position-1', alpha='alpha', beta='beta', gamma='gamma', delta='delta')
 
     print(f'Serdes test ')
     with timer('    Test: sleeping 1/2 second completed'):
@@ -178,3 +206,4 @@ if __name__ == '__main__':
     assert h1 == h2
     assert h2 == h3
     assert h3 == h4
+    pass
