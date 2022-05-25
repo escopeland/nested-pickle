@@ -37,8 +37,6 @@ class PositionMeta(type):
 class Position(metaclass=PositionMeta):
 
     def __init__(self, **kwargs):
-    # def __init__(self, label, **kwargs):
-        # self.__class__.label = label
 
         for a in self.__slots__:
             setattr(self, a, 0)
@@ -48,20 +46,16 @@ class Position(metaclass=PositionMeta):
 
     def __repr__(self):
         attr_repr = (f'{k}={getattr(self, k, None)}' for k in self.__slots__)
-        return f"{self.owner}({self.label}): {', '.join(attr_repr)}"
+        return f"Position: {', '.join(attr_repr)}"
 
     def __getstate__(self):
-        # log class variables
-        state = dict(owner=self.owner, label=self.label)
+        state = dict()
         # log __slots__
         for s in self.__slots__:
             state[s] = getattr(self, s)
         return state
 
     def __setstate__(self, state):
-        # restore class variables
-        self.__class__.owner = state.pop('owner')
-        self.__class__.label = state.pop('label')
         # restore __slots__
         for s in self.__slots__:
             setattr(self, s, state.pop(s))
@@ -77,28 +71,20 @@ class HistoryMeta(type):
     def __new__(cls, name, bases, namespace):
         if not dict in bases:
             namespace['Position'] = type(
-                name.split('.')[0] + '.Position', (Position, ), dict(
-                    owner=namespace['owner'],
-                    label=None,
-                    attrs=namespace.pop('attrs')))
+                name.split('.')[0] + '.Position', (Position, ),
+                dict(attrs=namespace.pop('attrs')))
         return super().__new__(cls, name, bases, namespace)
 
 class History(dict, metaclass=HistoryMeta):
 
-    def __init__(self, label):
-        self.__class__.label = label
-        self.Position.label  = label
-
     def create(self, label, **kwargs):
-        # self[label] = self.Position(self.label, **kwargs)
         self[label] = self.Position(**kwargs)
 
     def __repr__(self):
         return f'History object: {len(self)} instances of type {self.Position}'
 
     def __getstate__(self):
-        # log class variables
-        state = dict(owner=self.owner, label=self.label)
+        state = dict()
         # log self.items()
         for k, v in self.items():
             state[k] = v.__getstate__()
@@ -106,9 +92,6 @@ class History(dict, metaclass=HistoryMeta):
 
     def __setstate__(self, state):
         self.clear()
-        # restore class variables
-        self.__class__.owner = state.pop('owner')
-        self.__class__.label = state.pop('label')
         # restore self.items()
         for k, s in state.items():
             v = self.Position()
@@ -125,40 +108,33 @@ class BaseMeta(type):
 
     def __new__(cls, name, bases, namespace):
         if not dict in bases:
-            # Assign an owner if we're at the root of an asset stack
-            namespace['owner'] = namespace.pop('owner', None) or name
-            namespace['label'] = None
-
             if len(name.split('.')) < 2: # Skip if an already setup `holding_type`
                 namespace['History'] = type(name + '.History',  (History, ),
-                    dict(owner=name,
-                         label=None,
-                         attrs=namespace.pop('attrs')))
-                holding_type = namespace.pop('holding_type', None)
+                    dict(attrs=namespace.pop('attrs')))
 
+                holding_type = namespace.pop('holding_type', None)
                 namespace['Holding'] = (
-                    type(name.split('.')[0] + '.Holding', (holding_type, ), 
-                         dict(owner=namespace['owner']))
+                    type(name.split('.')[0] + '.Holding', (holding_type, ), dict())
                     if holding_type else None)
 
-                namespace['__slots__'] = ('history', )
+                namespace['__slots__'] = ('label', 'history', )
 
         return super().__new__(cls, name, bases, namespace)
 
 class BaseHolding(dict, metaclass=BaseMeta):
 
     def __init__(self, label=None):
-        self.__class__.label = label
-        self.history = self.History(label=label)
+        self.label = label
+        self.history = self.History()
         # no call to super().__init__() needed.
 
     def create(self, label):
         self[label] = self.Holding(label=label)
 
     def __getstate__(self):
-        # log class variables
-        state = dict(owner=self.owner, label=self.label)
+        state = dict()
         # log __slots__
+        state['label'] = self.label
         state['history']  = self.history.__getstate__()
         # log self.items()
         for k, v in self.items():
@@ -167,10 +143,8 @@ class BaseHolding(dict, metaclass=BaseMeta):
 
     def __setstate__(self, state):
         self.clear()
-        # restore class variables
-        self.__class__.owner = state.pop('owner')
-        self.__class__.label = state.pop('label')
         # restore __slots__
+        self.label = state.pop('label')
         # The follwoing line is not req'd if self.history created in __new__
         self.history = self.History(label=self.label)
         self.history.__setstate__(state.pop('history'))
