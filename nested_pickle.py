@@ -51,14 +51,18 @@ class Position(metaclass=PositionMeta):
         return f"{self.owner}({self.label}): {', '.join(attr_repr)}"
 
     def __getstate__(self):
+        # log class variables
         state = dict(owner=self.owner, label=self.label)
+        # log __slots__
         for s in self.__slots__:
             state[s] = getattr(self, s)
         return state
 
     def __setstate__(self, state):
+        # restore class variables
         self.__class__.owner = state.pop('owner')
         self.__class__.label = state.pop('label')
+        # restore __slots__
         for s in self.__slots__:
             setattr(self, s, state.pop(s))
 
@@ -93,15 +97,19 @@ class History(dict, metaclass=HistoryMeta):
         return f'History object: {len(self)} instances of type {self.Position}'
 
     def __getstate__(self):
+        # log class variables
         state = dict(owner=self.owner, label=self.label)
+        # log self.items()
         for k, v in self.items():
             state[k] = v.__getstate__()
         return state
 
     def __setstate__(self, state):
         self.clear()
+        # restore class variables
         self.__class__.owner = state.pop('owner')
         self.__class__.label = state.pop('label')
+        # restore self.items()
         for k, s in state.items():
             v = self.Position()
             v.__setstate__(s)
@@ -148,22 +156,27 @@ class BaseHolding(dict, metaclass=BaseMeta):
         self[label] = self.Holding(label=label)
 
     def __getstate__(self):
+        # log class variables
         state = dict(owner=self.owner, label=self.label)
+        # log __slots__
         state['history']  = self.history.__getstate__()
+        # log self.items()
         for k, v in self.items():
             state[k] = v.__getstate__()
         return state
 
     def __setstate__(self, state):
+        self.clear()
+        # restore class variables
         self.__class__.owner = state.pop('owner')
         self.__class__.label = state.pop('label')
+        # restore __slots__
         # The follwoing line is not req'd if self.history created in __new__
         self.history = self.History(label=self.label)
         self.history.__setstate__(state.pop('history'))
-        self.clear()
-        target = self.Holding
+        # restore self.items()
         for k, s in state.items():
-            v = target(self.label)
+            v = self.Holding(self.label)
             v.__setstate__(s)
             self[k] = v
 
