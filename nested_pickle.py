@@ -36,8 +36,9 @@ class PositionMeta(type):
         
 class Position(metaclass=PositionMeta):
 
-    def __init__(self, label, **kwargs):
-        self.__class__.label = label
+    def __init__(self, **kwargs):
+    # def __init__(self, label, **kwargs):
+        # self.__class__.label = label
 
         for a in self.__slots__:
             setattr(self, a, 0)
@@ -82,9 +83,11 @@ class History(dict, metaclass=HistoryMeta):
 
     def __init__(self, label):
         self.__class__.label = label
+        self.Position.label  = label
 
     def create(self, label, **kwargs):
-        self[label] = self.Position(self.label, **kwargs)
+        # self[label] = self.Position(self.label, **kwargs)
+        self[label] = self.Position(**kwargs)
 
     def __repr__(self):
         return f'History object: {len(self)} instances of type {self.Position}'
@@ -100,7 +103,7 @@ class History(dict, metaclass=HistoryMeta):
         self.__class__.owner = state.pop('owner')
         self.__class__.label = state.pop('label')
         for k, s in state.items():
-            v = self.Position(label=self.label)
+            v = self.Position()
             v.__setstate__(s)
             self[k] = v
 
