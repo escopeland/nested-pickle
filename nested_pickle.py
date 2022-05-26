@@ -2,7 +2,7 @@
 #
 # Note <class BaseHolindg> in particular:
 #   1. If initialization uses __new__ instead of __init__, then type.__call__
-#      will call dict.__init__(label) after __new__, which will create a key,
+#      will call dict.__init__(label) after __new__, which will create a label,
 #      value pair {'label':label} with label defaulting to None obviously given
 #      the signature of __new__.
 #   2. A workaround to this problem is to add an __init__ method, which just
@@ -37,8 +37,6 @@ class PositionMeta(type):
 class Position(metaclass=PositionMeta):
 
     def __init__(self, **kwargs):
-    # def __init__(self, label, **kwargs):
-        # self.__class__.label = label
 
         for a in self.__slots__:
             setattr(self, a, 0)
@@ -74,22 +72,21 @@ class HistoryMeta(type):
     def __prepare__(cls, name, bases, **kwargs):
         return {'__slots__': ()}
 
+    #staticmethod
     def __new__(cls, name, bases, namespace):
         if not dict in bases:
-            namespace['Position'] = type(
-                name.split('.')[0] + '.Position', (Position, ), dict(
-                    label=None,
-                    attrs=namespace.pop('attrs')))
+            namespace['Position'] = type( name.split('.')[0] + '.Position',
+                (Position, ), dict(label=None, attrs=namespace.pop('attrs')))
+
         return super().__new__(cls, name, bases, namespace)
 
 class History(dict, metaclass=HistoryMeta):
 
     def __init__(self, label):
         self.__class__.label = label
-        self.Position.label  = label
+        self.Position.label = label # all Positions get the same label
 
     def create(self, label, **kwargs):
-        # self[label] = self.Position(self.label, **kwargs)
         self[label] = self.Position(**kwargs)
 
     def __repr__(self):
@@ -124,18 +121,15 @@ class BaseMeta(type):
     def __new__(cls, name, bases, namespace):
         if not dict in bases:
             # Assign an owner if we're at the root of an asset stack
-            namespace['owner'] = namespace.pop('owner', None) or name
             namespace['label'] = None
 
             if len(name.split('.')) < 2: # Skip if an already setup `holding_type`
-                namespace['History'] = type(name + '.History',  (History, ),
-                    dict(label=None,
-                         attrs=namespace.pop('attrs')))
-                holding_type = namespace.pop('holding_type', None)
+                namespace['History'] = type(name + '.History', (History, ),
+                    dict(label=None, attrs=namespace.pop('attrs')))
 
-                namespace['Holding'] = (type(name.split('.')[0] + '.Holding', (holding_type, ), 
-                         dict())
-                    if holding_type else None)
+                holding_type = namespace.pop('holding_type', None)
+                namespace['Holding'] = (type( name.split('.')[0] + '.Holding',
+                    (holding_type, ), dict()) if holding_type else None)
 
                 namespace['__slots__'] = ('history', )
 
