@@ -47,8 +47,9 @@ class Position(metaclass=PositionMeta):
             setattr(self, k, v) # AttributeError on write to non-existent slot
 
     def __repr__(self):
+        owner = self.__class__.__name__.split('.')[0]
         attr_repr = (f'{k}={getattr(self, k, None)}' for k in self.__slots__)
-        return f"{self.owner}({self.label}): {', '.join(attr_repr)}"
+        return f"{owner}[{self.label}]: position({', '.join(attr_repr)})"
 
     def __getstate__(self):
         # log class variables
