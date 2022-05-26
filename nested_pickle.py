@@ -23,6 +23,22 @@ from imports.time_utils import timer
 
 pprint = PrettyPrinter(sort_dicts=False).pprint
 
+
+class ClassAttribute:
+    __slots__ = ('value', 'default')
+
+    def __init__(self, default=None):
+        self.default = default
+
+    def __get__(self, instance, owner):
+        try:
+            return self.value
+        except:
+            return self.default
+
+    def __set__(self, instance, value):
+        self.value = value
+
 class PositionMeta(type):
     @classmethod
     def __prepare__(cls, name, bases, **kwargs):
@@ -30,15 +46,19 @@ class PositionMeta(type):
 
     def __new__(cls, name, bases, namespace):
         if bases:
-            namespace['__slots__'] = namespace.pop('attrs')
+            namespace['__slots__'] = ('label', ) + namespace.pop('attrs')
 
         return super().__new__(cls, name, bases, namespace)
         
 class Position(metaclass=PositionMeta):
 
-    def __init__(self, **kwargs):
+    # label = ClassAttribute()
 
-        for a in self.__slots__:
+    def __init__(self, label, **kwargs):
+
+        self.label = label
+
+        for a in self.__slots__[1:]:
             setattr(self, a, 0)
 
         for k, v in kwargs.items():
@@ -51,15 +71,16 @@ class Position(metaclass=PositionMeta):
 
     def __getstate__(self):
         # log class variables
-        state = dict(label=self.label)
+        # state = dict(label=self.label)
         # log __slots__
+        state = dict()
         for s in self.__slots__:
             state[s] = getattr(self, s)
         return state
 
     def __setstate__(self, state):
         # restore class variables
-        self.__class__.label = state.pop('label')
+        # self.label = state.pop('label')
         # restore __slots__
         for s in self.__slots__:
             setattr(self, s, state.pop(s))
@@ -76,37 +97,42 @@ class HistoryMeta(type):
     def __new__(cls, name, bases, namespace):
         if not dict in bases:
             namespace['Position'] = type( name.split('.')[0] + '.Position',
-                (Position, ), dict(label=None, attrs=namespace.pop('attrs')))
+                (Position, ), dict(attrs=namespace.pop('attrs')))
 
+            namespace['__slots__'] = ('label', )
         return super().__new__(cls, name, bases, namespace)
 
 class History(dict, metaclass=HistoryMeta):
 
     def __init__(self, label):
-        self.__class__.label = label
-        self.Position.label = label # all Positions get the same label
+        self.label = label
+        # test = self.Position.label
+        # self.Position.label = label # all Positions get the same label
+        # test = self.Position.label
+        pass
 
     def create(self, label, **kwargs):
-        self[label] = self.Position(**kwargs)
+        self[label] = self.Position(label=self.label, **kwargs)
 
     def __repr__(self):
         return f'History object: {len(self)} instances of type {self.Position}'
 
     def __getstate__(self):
         # log class variables
-        state = dict(label=self.label)
+        state = dict()
         # log self.items()
+        state['label'] = self.label
         for k, v in self.items():
             state[k] = v.__getstate__()
         return state
 
     def __setstate__(self, state):
         self.clear()
-        # restore class variables
-        self.__class__.label = state.pop('label')
+        # restore __slots__
+        self.label = state.pop('label')
         # restore self.items()
         for k, s in state.items():
-            v = self.Position()
+            v = self.Position(label=self.label)
             v.__setstate__(s)
             self[k] = v
 
@@ -121,24 +147,23 @@ class BaseMeta(type):
     def __new__(cls, name, bases, namespace):
         if not dict in bases:
             # Assign an owner if we're at the root of an asset stack
-            namespace['label'] = None
 
             if len(name.split('.')) < 2: # Skip if an already setup `holding_type`
                 namespace['History'] = type(name + '.History', (History, ),
-                    dict(label=None, attrs=namespace.pop('attrs')))
+                    dict(attrs=namespace.pop('attrs')))
 
                 holding_type = namespace.pop('holding_type', None)
-                namespace['Holding'] = (type( name.split('.')[0] + '.Holding',
+                namespace['Holding'] = (type(name.split('.')[0] + '.Holding',
                     (holding_type, ), dict()) if holding_type else None)
 
-                namespace['__slots__'] = ('history', )
+                namespace['__slots__'] = ('label', 'history', )
 
         return super().__new__(cls, name, bases, namespace)
 
 class BaseHolding(dict, metaclass=BaseMeta):
 
     def __init__(self, label=None):
-        self.__class__.label = label
+        self.label = label
         self.history = self.History(label=label)
         # no call to super().__init__() needed.
 
@@ -149,7 +174,8 @@ class BaseHolding(dict, metaclass=BaseMeta):
         # log class variables
         state = dict(label=self.label)
         # log __slots__
-        state['history']  = self.history.__getstate__()
+        state['label'] = self.label
+        state['history'] = self.history.__getstate__()
         # log self.items()
         for k, v in self.items():
             state[k] = v.__getstate__()
@@ -158,8 +184,8 @@ class BaseHolding(dict, metaclass=BaseMeta):
     def __setstate__(self, state):
         self.clear()
         # restore class variables
-        self.__class__.label = state.pop('label')
         # restore __slots__
+        self.label = state.pop('label')
         # The follwoing line is not req'd if self.history created in __new__
         self.history = self.History(label=self.label)
         self.history.__setstate__(state.pop('history'))
@@ -191,12 +217,21 @@ if __name__ == '__main__':
     h4 = Holding(label='Portfolio')
 
     h1.create('Vanguard')
+    h1.create('Bank of America')
     h1.__getstate__()
     h1['Vanguard'].create('VTSNX')
+    h1['Vanguard'].create('VNQI')
     h1.history.create(label='position-1', x=1, y=2, z=3)
     h1.history.create(label='position-2', x=5, y=6, z=7)
     h1['Vanguard'].history.create(label='position-1', a=4, b=5)
     h1['Vanguard']['VTSNX'].history.create(label='position-1', alpha='alpha', beta='beta', gamma='gamma', delta='delta')
+    h1['Vanguard']['VNQI'].history.create(label='position-1', alpha='a', beta='b', gamma='c', delta='d')
+    h1['Bank of America'].history.create(label='position-1', a=6, b=7)
+    h1['Bank of America'].create('CASH')
+    h1['Bank of America']['CASH'].history.create(label='position-1', alpha='a-1', beta='b-1', gamma='c-1', delta='d-1')
+
+    print(h1['Vanguard'].history['position-1'])
+    print(h1['Vanguard']['VTSNX'].history['position-1'])
 
     print(f'Serdes test ')
     with timer('    Test: sleeping 1/2 second completed'):
