@@ -18,6 +18,7 @@ import json
 import pickle
 import time
 from pprint import PrettyPrinter
+from weakref import WeakKeyDictionary
 
 from imports.time_utils import timer
 
@@ -25,19 +26,23 @@ pprint = PrettyPrinter(sort_dicts=False).pprint
 
 
 class ClassAttribute:
-    __slots__ = ('value', 'default')
+    __slots__ = ('data', 'default')
 
     def __init__(self, default=None):
+        self.data = WeakKeyDictionary()
         self.default = default
 
     def __get__(self, instance, owner):
         try:
-            return self.value
+            return self.data[instance]
         except:
             return self.default
 
     def __set__(self, instance, value):
-        self.value = value
+        self.data[instance] = value
+
+    def __set_name__(self, owner, name):
+        self.name = name
 
 class PositionMeta(type):
     @classmethod
@@ -63,6 +68,8 @@ class Position(metaclass=PositionMeta):
 
         for k, v in kwargs.items():
             setattr(self, k, v) # AttributeError on write to non-existent slot
+
+        pass
 
     def __repr__(self):
         owner = self.__class__.__name__.split('.')[0]
