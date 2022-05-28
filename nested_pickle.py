@@ -23,6 +23,12 @@ from imports.time_utils import timer
 
 pprint = PrettyPrinter(sort_dicts=False).pprint
 
+class Label:
+    __slots__ = ()
+
+    @property
+    def label(self):
+        return self.__class__.__name__
 
 class ClassAttribute:
     __slots__ = ('value', 'default')
@@ -60,12 +66,12 @@ class PositionMeta(type):
         return {'__slots__': ()}
 
     def __new__(cls, name, bases, namespace):
-        if bases:
+        if Label not in bases:
             namespace['__slots__'] = namespace.pop('attrs')
 
         return super().__new__(cls, name, bases, namespace)
         
-class Position(metaclass=PositionMeta):
+class Position(Label, metaclass=PositionMeta):
 
     def __init__(self, **kwargs):
 
@@ -99,13 +105,13 @@ class HistoryMeta(type):
 
     #staticmethod
     def __new__(cls, name, bases, namespace):
-        if not dict in bases:
+        if not dict in bases and Label not in bases:
             namespace['Position'] = type(namespace.pop('label') + '.Position',
                 (Position, ), dict(attrs=namespace.pop('attrs')))
 
         return super().__new__(cls, name, bases, namespace)
 
-class History(dict, metaclass=HistoryMeta):
+class History(dict, Label, metaclass=HistoryMeta):
 
     def __init__(self):
         pass
@@ -139,7 +145,7 @@ class BaseMeta(type):
         return {'__slots__': ()}
 
     def __new__(cls, name, bases, namespace):
-        if not dict in bases:
+        if dict not in bases:
             if holding_type:=namespace.pop('holding_type', None):
                 namespace['Holding'] = holding_type
 
