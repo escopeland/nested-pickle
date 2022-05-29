@@ -83,7 +83,7 @@ class Position(Label, metaclass=PositionMeta):
 
     def __repr__(self):
         attr_repr = (f'{k}={getattr(self, k, None)}' for k in self.__slots__)
-        return f"{self.__class__.__name__}({', '.join(attr_repr)})"
+        return f"{self.label}({', '.join(attr_repr)})"
 
     def __getstate__(self):
         state = dict()
@@ -105,7 +105,7 @@ class HistoryMeta(type):
 
     #staticmethod
     def __new__(cls, name, bases, namespace):
-        if not dict in bases and Label not in bases:
+        if dict not in bases and Label not in bases:
             namespace['Position'] = type(namespace.pop('label') + '.Position',
                 (Position, ), dict(attrs=namespace.pop('attrs')))
 
@@ -121,7 +121,7 @@ class History(dict, Label, metaclass=HistoryMeta):
 
     def __repr__(self):
         position_type = '.'.join(self.Position.__name__.split('.')[:-1])
-        return f'{self.__class__.__name__}({len(self)} {position_type} entries)'
+        return f'{self.label}({len(self)} {position_type} entries)'
 
     def __getstate__(self):
         state = dict()
@@ -162,7 +162,7 @@ class BaseHolding(dict, metaclass=BaseMeta):
     def __repr__(self):
         holding_type = getattr(self, 'Holding', type(None))
         return f'{self.label}({len(self)} {holding_type.__name__} holding(s))'
-        
+
     def create(self, label):
         self[label] = self.Holding(label=self.label + '.' + label)
 
